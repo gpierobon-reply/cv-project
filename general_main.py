@@ -133,7 +133,7 @@ def _validate_request(file: UploadFile, x_api_key: str | None) -> None:
 
 app = FastAPI(lifespan=lifespan)
 
-API_KEY: str = os.getenv("API_KEY", "ciao")
+API_KEY = os.environ["API_KEY"]
 
 @app.get("/")
 def root():
