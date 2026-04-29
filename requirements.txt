@@ -1,0 +1,8 @@
+fastapi
+uvicorn
+gunicorn
+numpy
+python-multipart
+opencv-python-headless
+rapidocr-onnxruntime
+idna
