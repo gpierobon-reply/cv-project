@@ -18,7 +18,7 @@ async def lifespan(app: FastAPI):
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 
-def analyze_led_circuit_from_bytes(image_bytes: bytes) -> list:
+def analyze_led_circuit_from_bytes(image_bytes: bytes) -> dict:
     """Detect the dominant LED colour in an image using HSV analysis."""
     np_arr = np.frombuffer(image_bytes, np.uint8)
     img = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
@@ -45,7 +45,7 @@ def analyze_led_circuit_from_bytes(image_bytes: bytes) -> list:
     valid_pixels = hsv_crop[color_mask > 0]
 
     if len(valid_pixels) == 0:
-        return [{"category": "led", "value": "indeterminato", "confidence": 0.0}]
+        return {"category": "led", "value": "undefined", "confidence": 0.0}
 
     color_ranges = {
         "red":    [(0, 10), (165, 180)],
@@ -65,9 +65,9 @@ def analyze_led_circuit_from_bytes(image_bytes: bytes) -> list:
     confidence = votes[winner] / len(valid_pixels)
 
     if confidence < 0.20:
-        return [{"category": "led", "value": "undefined", "confidence": round(float(confidence), 4)}]
+        return {"category": "led", "value": "undefined", "confidence": round(float(confidence), 4)}
 
-    return [{"category": "led", "value": winner, "confidence": round(float(confidence), 4)}]
+    return {"category": "led", "value": winner, "confidence": round(float(confidence), 4)}
 
 def get_local_background_category(img, bbox) -> str:
     """Classify the local background around a text bounding-box as 'document' or 'box'.
@@ -96,7 +96,7 @@ def get_local_background_category(img, bbox) -> str:
     else:
         return "document"
 
-def analyze_text_from_bytes(image_bytes: bytes) -> list:
+def analyze_text_from_bytes(image_bytes: bytes) -> dict:
     """Run RapidOCR on an image and return detected text with category metadata."""
     np_arr = np.frombuffer(image_bytes, np.uint8)
     img = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
@@ -106,7 +106,8 @@ def analyze_text_from_bytes(image_bytes: bytes) -> list:
 
     raw_results, elapse = ocr_engine(img, use_cls=False)
 
-    final_output = []
+    # Build the internal list of candidate detections
+    final_output: list[dict] = []
     threshold = 0.25
 
     if raw_results:
@@ -120,7 +121,10 @@ def analyze_text_from_bytes(image_bytes: bytes) -> list:
                     "confidence": round(float(score), 4)
                 })
 
-    return final_output
+    if not final_output:
+        return {"category": "unknown", "value": "", "confidence": 0.0}
+
+    return max(final_output, key=lambda x: x["confidence"])
 
 # ─── Shared validation ────────────────────────────────────────────────────────
 
