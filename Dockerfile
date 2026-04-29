@@ -21,4 +21,4 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # Comando di avvio per Gunicorn
-CMD ["gunicorn", "--bind", "0.0.0.0:8000", "general_main:app"]
+CMD ["gunicorn", "-w", "1", "-k", "uvicorn.workers.UvicornWorker", "--bind", "0.0.0.0:8000", "general_main:app"]
