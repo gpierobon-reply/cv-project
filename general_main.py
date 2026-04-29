@@ -1,10 +1,11 @@
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, UploadFile, File, Header, HTTPException
+from fastapi import FastAPI, UploadFile, File, Header, HTTPException, Request
 from fastapi.responses import JSONResponse
 import cv2
 import numpy as np
 import os
 from rapidocr_onnxruntime import RapidOCR
+import requests
 
 # ─── Engine globale ───────────────────────────────────────────────────────────
 ocr_engine: RapidOCR | None = None
@@ -127,13 +128,14 @@ def _validate_request(file: UploadFile, x_api_key: str | None) -> None:
     if x_api_key != API_KEY:
         raise HTTPException(status_code=401, detail="Invalid API key")
     if not file.content_type or not file.content_type.startswith("image/"):
-        raise HTTPException(status_code=400, detail="Uploaded file must be an image")
+        raise HTTPException(status_code=400, detail="Uploaded file must be an image or None Command String")
 
 # ─── App ──────────────────────────────────────────────────────────────────────
 
 app = FastAPI(lifespan=lifespan)
 
 API_KEY = os.environ["API_KEY"]
+OPENAI_API_KEY = os.environ["OPENAI_API_KEY"]
 
 @app.get("/")
 def root():
@@ -152,7 +154,7 @@ async def predict_led(
     try:
         image_bytes = await file.read()
         led_results = analyze_led_circuit_from_bytes(image_bytes)
-        return JSONResponse(content={"results": led_results})
+        return led_results
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
@@ -167,8 +169,50 @@ async def predict_text(
     try:
         image_bytes = await file.read()
         text_results = analyze_text_from_bytes(image_bytes)
-        return JSONResponse(content={"results": text_results})
+        return text_results
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Prediction error: {str(e)}")
+
+
+@app.post("/predict/command")
+async def predict_sentiment(
+    request: Request,
+    x_api_key: str = Header(None),
+):
+
+    body = await request.json()
+    text = body.get("text", "").strip()
+
+    _validate_request(text, x_api_key)
+
+    if not text:
+        raise HTTPException(status_code=400, detail="Il campo 'text' non può essere vuoto.")
+
+    request_text = "Riceverai una frase, voglio che tu capisca se si tratti di un comando di tipo HELP,STOP,REPEAT,UNKNOWN. Devi restituire solamente una di queste 4 parole e nient'altro la frase è la seguente: " + text
+
+    try:
+        openai_response = requests.post(
+            "https://api.openai.com/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {OPENAI_API_KEY}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": "gpt-4o-mini",
+                "messages": [
+                    {"role": "system", "content": "Sei un assistente che riceve una frase in linguaggio naturale e che deve capire di che comando si tratta"},
+                    {"role": "user", "content": request_text},
+                ],
+            },
+        )
+        openai_response.raise_for_status()
+        result = openai_response.json()
+        content = result["choices"][0]["message"]["content"]
+        return JSONResponse(content={"command": content})
+
+    except requests.HTTPError as e:
+        raise HTTPException(status_code=502, detail=f"Errore OpenAI: {str(e)}")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Prediction error: {str(e)}")
