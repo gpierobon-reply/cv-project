@@ -134,6 +134,12 @@ def _validate_request(file: UploadFile, x_api_key: str | None) -> None:
     if not file.content_type or not file.content_type.startswith("image/"):
         raise HTTPException(status_code=400, detail="Uploaded file must be an image or None Command String")
 
+def _validate_command_request(text: str | None, x_api_key: str | None) -> None:
+    if x_api_key != API_KEY:
+        raise HTTPException(status_code=401, detail="Invalid API key")
+    if not text:
+        raise HTTPException(status_code=400, detail="None command string.")
+
 # ─── App ──────────────────────────────────────────────────────────────────────
 
 app = FastAPI(lifespan=lifespan)
@@ -189,10 +195,8 @@ async def predict_sentiment(
     body = await request.json()
     text = body.get("text", "").strip()
 
-    _validate_request(text, x_api_key)
+    _validate_command_request(text, x_api_key)
 
-    if not text:
-        raise HTTPException(status_code=400, detail="Il campo 'text' non può essere vuoto.")
 
     request_text = "Riceverai una frase, voglio che tu capisca se si tratti di un comando di tipo HELP,STOP,REPEAT,UNKNOWN. Devi restituire solamente una di queste 4 parole e nient'altro la frase è la seguente: " + text
 
