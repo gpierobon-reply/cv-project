@@ -16,7 +16,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
+        uses: docker/setup-buildx-action@v3
 
       - name: Log in to Docker Hub
         uses: docker/login-action@v3
@@ -25,11 +25,16 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Build and push container image to Docker Hub
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         with:
           context: .
           push: true
-          tags: giuliapierobonreply/cv-app:${{ github.sha }}
+          # FORZIAMO IL REBUILD COMPLETO PER RISOLVERE IL MODULENOTFOUNDERROR
+          no-cache: true
+          pull: true
+          tags: |
+            giuliapierobonreply/cv-app:${{ github.sha }}
+            giuliapierobonreply/cv-app:latest
           file: ./Dockerfile
 
   deploy:
@@ -38,9 +43,10 @@ jobs:
     steps:
       - name: Deploy to Azure Web App
         id: deploy-to-webapp
-        uses: azure/webapps-deploy@v2
+        uses: azure/webapps-deploy@v3
         with:
           app-name: 'cv-app-01'
           slot-name: 'Production'
+          # Usiamo il tag specifico per il deploy sicuro
           images: 'giuliapierobonreply/cv-app:${{ github.sha }}'
           publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_12B98DB27C864C038C3A4B97D5B19BE7 }}
