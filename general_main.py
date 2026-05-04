@@ -6,18 +6,14 @@ import numpy as np
 import os
 from rapidocr_onnxruntime import RapidOCR
 import requests
-from azure.ai.vision.imageanalysis import ImageAnalysisClient
-from azure.ai.vision.imageanalysis.models import VisualFeatures
-from azure.core.credentials import AzureKeyCredential
 
-
-vision_client = ImageAnalysisClient(
-    endpoint=AZURE_VISION_ENDPOINT, 
-    credential=AzureKeyCredential(AZURE_VISION_KEY)
-)
+# ─── Engine globale ───────────────────────────────────────────────────────────
+ocr_engine: RapidOCR | None = None
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    global ocr_engine
+    ocr_engine = RapidOCR()   # ← caricato UNA VOLTA SOLA all'avvio
     yield
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -37,7 +33,7 @@ def analyze_led_circuit_from_bytes(image_bytes: bytes) -> dict:
     x, y = max_loc
 
     if max_val < 220:
-        return {"category": "led", "value": "off", "confidence": 0.0}
+        return [{"category": "led", "value": "off", "confidence": 0.0}]
 
     padding = 40
     h, w = img.shape[:2]
@@ -49,7 +45,7 @@ def analyze_led_circuit_from_bytes(image_bytes: bytes) -> dict:
     valid_pixels = hsv_crop[color_mask > 0]
 
     if len(valid_pixels) == 0:
-        return {"category": "led", "value": "indeterminato", "confidence": 0.0}
+        return {"category": "led", "value": "undefined", "confidence": 0.0}
 
     color_ranges = {
         "red":    [(0, 10), (165, 180)],
@@ -101,40 +97,29 @@ def get_local_background_category(img, bbox) -> str:
         return "document"
 
 def analyze_text_from_bytes(image_bytes: bytes) -> dict:
-    """Usa Azure Vision per l'OCR e OpenCV per l'analisi del background."""
-    
-    try:
-        # Chiamata ad Azure
-        result = vision_client.analyze(
-            image_data=image_bytes,
-            visual_features=[VisualFeatures.READ]
-        )
-    except Exception as e:
-        raise ValueError(f"Errore chiamata Azure: {str(e)}")
-
+    """Run RapidOCR on an image and return detected text with category metadata."""
     np_arr = np.frombuffer(image_bytes, np.uint8)
     img = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
+
     if img is None:
         raise ValueError("Impossibile decodificare l'immagine")
 
-    final_output = []
+    raw_results, elapse = ocr_engine(img, use_cls=False)
 
-    if result.read and result.read.blocks:
-        for line in result.read.blocks[0].lines:
-            text = line.text
-            
-            # CORREZIONE QUI: Azure restituisce oggetti Point(x, y)
-            p = line.bounding_polygon
-            box = [[p[0].x, p[0].y], [p[1].x, p[1].y], [p[2].x, p[2].y], [p[3].x, p[3].y]]
-            
-            score = 0.99 
+    # Build the internal list of candidate detections
+    final_output: list[dict] = []
+    threshold = 0.25
 
-            category = get_local_background_category(img, box)
-            final_output.append({
-                "category": category,
-                "value": text,
-                "confidence": score
-            })
+    if raw_results:
+        for item in raw_results:
+            box, text, score = item[0], item[1], item[2]
+            if score > threshold:
+                category = get_local_background_category(img, box)
+                final_output.append({
+                    "category": category,
+                    "value": text,
+                    "confidence": round(float(score), 4)
+                })
 
     if not final_output:
         return {"category": "unknown", "value": "", "confidence": 0.0}
@@ -147,8 +132,8 @@ def _validate_request(file: UploadFile, x_api_key: str | None) -> None:
     if x_api_key != API_KEY:
         raise HTTPException(status_code=401, detail="Invalid API key")
     if not file.content_type or not file.content_type.startswith("image/"):
-        raise HTTPException(status_code=400, detail="Uploaded file must be an image")
-    
+        raise HTTPException(status_code=400, detail="Uploaded file must be an image or None Command String")
+
 def _validate_command_request(text: str | None, x_api_key: str | None) -> None:
     if x_api_key != API_KEY:
         raise HTTPException(status_code=401, detail="Invalid API key")
@@ -161,9 +146,6 @@ app = FastAPI(lifespan=lifespan)
 
 API_KEY = os.environ["API_KEY"]
 OPENAI_API_KEY = os.environ["OPENAI_API_KEY"]
-
-AZURE_VISION_KEY = os.environ.get("AZURE_VISION_KEY")
-AZURE_VISION_ENDPOINT = os.environ.get("AZURE_VISION_ENDPOINT")
 
 @app.get("/")
 def root():
