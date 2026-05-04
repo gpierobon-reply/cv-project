@@ -8,3 +8,5 @@ idna
 azure-ai-vision-imageanalysis
 azure-core
 requests
+rapidocr_onnxruntime
+onnxruntime
