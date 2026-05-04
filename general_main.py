@@ -10,6 +10,11 @@ from azure.ai.vision.imageanalysis import ImageAnalysisClient
 from azure.ai.vision.imageanalysis.models import VisualFeatures
 from azure.core.credentials import AzureKeyCredential
 
+API_KEY = os.environ["API_KEY"]
+OPENAI_API_KEY = os.environ["OPENAI_API_KEY"]
+
+AZURE_VISION_KEY = os.environ.get("AZURE_VISION_KEY")
+AZURE_VISION_ENDPOINT = os.environ.get("AZURE_VISION_ENDPOINT")
 
 vision_client = ImageAnalysisClient(
     endpoint=AZURE_VISION_ENDPOINT, 
@@ -158,12 +163,6 @@ def _validate_command_request(text: str | None, x_api_key: str | None) -> None:
 # ─── App ──────────────────────────────────────────────────────────────────────
 
 app = FastAPI(lifespan=lifespan)
-
-API_KEY = os.environ["API_KEY"]
-OPENAI_API_KEY = os.environ["OPENAI_API_KEY"]
-
-AZURE_VISION_KEY = os.environ.get("AZURE_VISION_KEY")
-AZURE_VISION_ENDPOINT = os.environ.get("AZURE_VISION_ENDPOINT")
 
 @app.get("/")
 def root():
