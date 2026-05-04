@@ -4,7 +4,6 @@ gunicorn
 numpy
 python-multipart
 opencv-python-headless
+rapidocr-onnxruntime
 idna
-azure-ai-vision-imageanalysis
-azure-core
 requests
