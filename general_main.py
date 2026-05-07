@@ -27,14 +27,33 @@ async def lifespan(app: FastAPI):
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 
-def analyze_led_circuit_from_bytes(image_bytes: bytes) -> dict:
-    """Detect the dominant LED colour in an image using HSV analysis."""
+def analyze_led_circuit_from_bytes(
+    image_bytes: bytes, 
+    crop_top: float = 0.5, 
+    crop_bottom: float = 0.2, 
+    crop_left: float = 0.2, 
+    crop_right: float = 0.3
+    ) -> dict:
+    """Detect the dominant LED colour in an image using HSV analysis with asymmetric cropping."""
+
     np_arr = np.frombuffer(image_bytes, np.uint8)
     img = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
 
     if img is None:
-        raise ValueError("Impossibile decodificare l'immagine")
+        raise ValueError("It is not possible to decode the image.")
 
+    h_orig, w_orig = img.shape[:2]
+    start_y = int(h_orig * crop_top)
+    end_y = int(h_orig * (1.0 - crop_bottom))
+    
+    start_x = int(w_orig * crop_left)
+    end_x = int(w_orig * (1.0 - crop_right))
+    
+    if start_y >= end_y or start_x >= end_x:
+        raise ValueError("The crop percentages are too high, the image has disappeared!")
+    
+    img = img[start_y:end_y, start_x:end_x]
+    
     hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
     v_channel = hsv[:, :, 2]
     blurred_v = cv2.GaussianBlur(v_channel, (15, 15), 0)
@@ -54,7 +73,7 @@ def analyze_led_circuit_from_bytes(image_bytes: bytes) -> dict:
     valid_pixels = hsv_crop[color_mask > 0]
 
     if len(valid_pixels) == 0:
-        return {"category": "led", "value": "indeterminato", "confidence": 0.0}
+        return {"category": "led", "value": "undefined", "confidence": 0.0}
 
     color_ranges = {
         "red":    [(0, 10), (165, 180)],
